@@ -2,31 +2,29 @@ import { createClient } from 'redis';
 
 class RedisClient {
   constructor() {
-    this.client = redis.createClient();
-
+    this.client = createClient();
     this.client.on('error', (err) => {
       console.error('Redis Client Error:', err);
     });
-
-    this.getAsync = promisify(this.client.get).bind(this.client);
-    this.setexAsync = promisify(this.client.setex).bind(this.client);
-    this.delAsync = promisify(this.client.del).bind(this.client);
+    this.client.connect().catch((err) => {
+      console.error('Failed to connect to Redis:', err);
+    });
   }
 
   isAlive() {
-    return !!(this.client && this.client.connected);
+    return Boolean(this.client && this.client.isOpen);
   }
 
   async get(key) {
-    return this.getAsync(key);
+    return this.client.get(key);
   }
 
   async set(key, value, duration) {
-    await this.setexAsync(key, duration, value);
+    await this.client.set(key, value, { EX: duration });
   }
 
   async del(key) {
-    await this.delAsync(key);
+    await this.client.del(key);
   }
 }
 
