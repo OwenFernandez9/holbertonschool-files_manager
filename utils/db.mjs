@@ -1,4 +1,5 @@
-import { MongoClient } from 'mongodb';
+import mongodb from 'mongodb';
+const { MongoClient } = mongodb;
 
 class DBClient {
   constructor() {
@@ -8,11 +9,10 @@ class DBClient {
 
     this.dbName = dbName;
     this.connected = false;
+    this.db = null;
 
     const uri = `mongodb://${host}:${port}`;
-
     this.client = new MongoClient(uri);
-    this.db = null;
 
     this.client.connect()
       .then(() => {
