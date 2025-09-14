@@ -1,4 +1,5 @@
 import mongodb from 'mongodb';
+
 const { MongoClient } = mongodb;
 
 class DBClient {
