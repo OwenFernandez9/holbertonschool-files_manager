@@ -5,21 +5,36 @@ import mongodb from 'mongodb';
 import dbClient from '../utils/db';
 import redisClient from '../utils/redis';
 
-const { ObjectId } = mongodb;
+const {
+  ObjectId,
+} = mongodb;
 
 class FilesController {
-  static async postUpload(req, res) {
+  static async _getAuthUserId(req) {
     const token = req.header('X-Token') || '';
+    if (!token) return null;
     const userId = await redisClient.get(`auth_${token}`);
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
+    return userId || null;
+  }
+
+  static _serialize(doc) {
+    return {
+      id: doc._id.toString(),
+      userId: doc.userId.toString(),
+      name: doc.name,
+      type: doc.type,
+      isPublic: Boolean(doc.isPublic),
+      parentId: doc.parentId === 0 ? 0 : doc.parentId.toString(),
+    };
+  }
+
+  static async postUpload(req, res) {
+    const userId = await FilesController._getAuthUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
     const users = dbClient.db.collection('users');
     const user = await users.findOne({ _id: new ObjectId(userId) });
-    if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
     const {
       name, type, parentId = 0, isPublic = false, data,
@@ -36,16 +51,14 @@ class FilesController {
     const files = dbClient.db.collection('files');
 
     if (parentId !== 0) {
-      let parentFile;
+      let parent;
       try {
-        parentFile = await files.findOne({ _id: new ObjectId(parentId) });
+        parent = await files.findOne({ _id: new ObjectId(parentId) });
       } catch (e) {
         return res.status(400).json({ error: 'Parent not found' });
       }
-      if (!parentFile) {
-        return res.status(400).json({ error: 'Parent not found' });
-      }
-      if (parentFile.type !== 'folder') {
+      if (!parent) return res.status(400).json({ error: 'Parent not found' });
+      if (parent.type !== 'folder') {
         return res.status(400).json({ error: 'Parent is not a folder' });
       }
     }
@@ -54,7 +67,7 @@ class FilesController {
       userId: new ObjectId(userId),
       name,
       type,
-      isPublic,
+      isPublic: Boolean(isPublic),
       parentId: parentId === 0 ? 0 : new ObjectId(parentId),
     };
 
@@ -65,7 +78,7 @@ class FilesController {
         userId,
         name,
         type,
-        isPublic,
+        isPublic: Boolean(isPublic),
         parentId,
       });
     }
@@ -76,8 +89,8 @@ class FilesController {
     }
 
     const localPath = path.join(folderPath, uuidv4());
-    const fileData = Buffer.from(data, 'base64');
-    await fs.promises.writeFile(localPath, fileData);
+    const content = Buffer.from(data, 'base64');
+    await fs.promises.writeFile(localPath, content);
 
     fileDoc.localPath = localPath;
 
@@ -88,9 +101,52 @@ class FilesController {
       userId,
       name,
       type,
-      isPublic,
+      isPublic: Boolean(isPublic),
       parentId,
     });
+  }
+
+  static async getShow(req, res) {
+    const userId = await FilesController._getAuthUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { id } = req.params;
+    let file;
+    try {
+      file = await dbClient.db.collection('files').findOne({
+        _id: new ObjectId(id),
+        userId: new ObjectId(userId),
+      });
+    } catch (e) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    if (!file) return res.status(404).json({ error: 'Not found' });
+
+    return res.status(200).json(FilesController._serialize(file));
+  }
+
+  static async getIndex(req, res) {
+    const userId = await FilesController._getAuthUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const parentIdRaw = req.query.parentId !== undefined ? req.query.parentId : '0';
+    const page = Number.isNaN(Number(req.query.page)) ? 0 : Number(req.query.page);
+
+    const match = {
+      userId: new ObjectId(userId),
+      parentId: parentIdRaw === '0' ? 0 : new ObjectId(parentIdRaw),
+    };
+
+    const pipeline = [
+      { $match: match },
+      { $sort: { _id: 1 } },
+      { $skip: page * 20 },
+      { $limit: 20 },
+    ];
+
+    const docs = await dbClient.db.collection('files').aggregate(pipeline).toArray();
+    const out = docs.map((d) => FilesController._serialize(d));
+    return res.status(200).json(out);
   }
 }
 
