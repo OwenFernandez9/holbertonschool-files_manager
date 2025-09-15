@@ -12,7 +12,9 @@ class FilesController {
     const token = req.header('X-Token') || '';
     if (!token) return null;
     if (!redisClient.isAlive()) return null;
-    const withTimeout = (p, ms = 1500) => Promise.race([p, new Promise((r) => setTimeout(() => r(null), ms))]);
+    const withTimeout = (p, ms = 1500) => Promise.race(
+      [p, new Promise((r) => setTimeout(() => r(null), ms))],
+    );
     const userId = await withTimeout(redisClient.get(`auth_${token}`));
     return userId || null;
   }
@@ -38,7 +40,9 @@ class FilesController {
     const user = await users.findOne({ _id: new ObjectId(userId) });
     if (!user) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { name, type, parentId = 0, isPublic = false, data } = req.body || {};
+    const {
+      name, type, parentId = 0, isPublic = false, data,
+    } = req.body || {};
 
     if (!name) return res.status(400).json({ error: 'Missing name' });
     if (!type || !['folder', 'file', 'image'].includes(type)) return res.status(400).json({ error: 'Missing type' });
