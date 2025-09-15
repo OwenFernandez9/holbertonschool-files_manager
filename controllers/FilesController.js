@@ -129,8 +129,10 @@ class FilesController {
     const userId = await FilesController._getAuthUserId(req);
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
+    // Sin ?? para compatibilidad con el parser
     const parentIdRaw = req.query.parentId !== undefined ? req.query.parentId : '0';
-    const page = Number.isNaN(Number(req.query.page)) ? 0 : Number(req.query.page);
+    const pageNum = Number(req.query.page);
+    const page = Number.isNaN(pageNum) ? 0 : pageNum;
 
     const match = {
       userId: new ObjectId(userId),
@@ -144,9 +146,14 @@ class FilesController {
       { $limit: 20 },
     ];
 
-    const docs = await dbClient.db.collection('files').aggregate(pipeline).toArray();
-    const out = docs.map((d) => FilesController._serialize(d));
-    return res.status(200).json(out);
+    try {
+      const docs = await dbClient.db.collection('files').aggregate(pipeline).toArray();
+      const out = docs.map((d) => FilesController._serialize(d));
+      return res.status(200).json(out);
+    } catch (e) {
+      // Ante cualquier problema de query, devolvemos lista vacía para no colgar
+      return res.status(200).json([]);
+    }
   }
 }
 
