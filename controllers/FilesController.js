@@ -126,18 +126,32 @@ class FilesController {
   }
 
   static async getIndex(req, res) {
-    const userId = await FilesController._getAuthUserId(req);
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const userId = await FilesController._getAuthUserId(req);
+        if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    // Sin ?? para compatibilidad con el parser
-    const parentIdRaw = req.query.parentId !== undefined ? req.query.parentId : '0';
-    const pageNum = Number(req.query.page);
-    const page = Number.isNaN(pageNum) ? 0 : pageNum;
+        const parentIdRaw = req.query.parentId !== undefined ? req.query.parentId : '0';
+        const pageNum = Number(req.query.page);
+        const page = Number.isNaN(pageNum) ? 0 : pageNum;
 
-    const match = {
-      userId: new ObjectId(userId),
-      parentId: parentIdRaw === '0' ? 0 : new ObjectId(parentIdRaw),
-    };
+        const match = {
+        userId: new ObjectId(userId),
+        parentId: parentIdRaw === '0' ? 0 : new ObjectId(parentIdRaw),
+        };
+
+        const pipeline = [
+        { $match: match },
+        { $sort: { _id: 1 } },
+        { $skip: page * 20 },
+        { $limit: 20 },
+        ];
+
+        const docs = await dbClient.db.collection('files').aggregate(pipeline).toArray();
+        const out = docs.map((d) => FilesController._serialize(d));
+        return res.status(200).json(out);
+    } catch (e) {
+        return res.status(200).json([]);
+  }
 
     const pipeline = [
       { $match: match },
@@ -151,7 +165,6 @@ class FilesController {
       const out = docs.map((d) => FilesController._serialize(d));
       return res.status(200).json(out);
     } catch (e) {
-      // Ante cualquier problema de query, devolvemos lista vacía para no colgar
       return res.status(200).json([]);
     }
   }
