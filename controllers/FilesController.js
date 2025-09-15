@@ -106,8 +106,14 @@ class FilesController {
 
   static async getIndex(req, res) {
     const userId = await FilesController._getAuthUserId(req);
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    if (!dbClient.isAlive()) return res.status(200).json([]);
+    if (!userId) {
+      console.log('Unauthorized: no userId');
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (!dbClient.isAlive()) {
+      console.log('DB not alive');
+      return res.status(200).json([]);
+    }
 
     const parentIdRaw = req.query.parentId === undefined ? '0' : String(req.query.parentId);
     const pageNum = Number.parseInt(String(req.query.page || '0'), 10);
@@ -117,17 +123,25 @@ class FilesController {
     let parentFilter;
     if (parentIdRaw === '0') parentFilter = 0;
     else if (ObjectId.isValid(parentIdRaw)) parentFilter = new ObjectId(parentIdRaw);
-    else return res.status(200).json([]);
+    else {
+      console.log('Invalid parentIdRaw:', parentIdRaw);
+      return res.status(200).json([]);
+    }
 
-    const cursor = dbClient.db
-      .collection('files')
-      .find({ userId: new ObjectId(userId), parentId: parentFilter })
-      .sort({ _id: 1 })
-      .skip(page * limit)
-      .limit(limit);
+    try {
+      const cursor = dbClient.db
+        .collection('files')
+        .find({ userId: new ObjectId(userId), parentId: parentFilter })
+        .sort({ _id: 1 })
+        .skip(page * limit)
+        .limit(limit);
 
-    const docs = (await withTimeout(cursor.toArray(), 2500)) || [];
-    return res.status(200).json(docs.map((d) => FilesController._serialize(d)));
+      const docs = (await withTimeout(cursor.toArray(), 2500)) || [];
+      return res.status(200).json(docs.map((d) => FilesController._serialize(d)));
+    } catch (err) {
+      console.error('Error in getIndex:', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
   }
 }
 
