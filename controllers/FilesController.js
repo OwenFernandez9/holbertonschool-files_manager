@@ -72,12 +72,7 @@ class FilesController {
     if (type === 'folder') {
       const result = await files.insertOne(fileDoc);
       return res.status(201).json({
-        id: result.insertedId.toString(),
-        userId,
-        name,
-        type,
-        isPublic: Boolean(isPublic),
-        parentId,
+        id: result.insertedId.toString(), userId, name, type, isPublic: Boolean(isPublic), parentId,
       });
     }
 
@@ -93,12 +88,7 @@ class FilesController {
     const result = await files.insertOne(fileDoc);
 
     return res.status(201).json({
-      id: result.insertedId.toString(),
-      userId,
-      name,
-      type,
-      isPublic: Boolean(isPublic),
-      parentId,
+      id: result.insertedId.toString(), userId, name, type, isPublic: Boolean(isPublic), parentId,
     });
   }
 
@@ -106,49 +96,47 @@ class FilesController {
     const userId = await FilesController._getAuthUserId(req);
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    if (!dbClient.isAlive()) return res.status(404).json({ error: 'Not found' });
-
     const { id } = req.params;
-    let file;
+    if (!ObjectId.isValid(id)) return res.status(404).json({ error: 'Not found' });
+
     try {
-      file = await dbClient.db.collection('files').findOne({
+      const file = await dbClient.db.collection('files').findOne({
         _id: new ObjectId(id),
         userId: new ObjectId(userId),
       });
+      if (!file) return res.status(404).json({ error: 'Not found' });
+      return res.status(200).json(FilesController._serialize(file));
     } catch (e) {
       return res.status(404).json({ error: 'Not found' });
     }
-    if (!file) return res.status(404).json({ error: 'Not found' });
-
-    return res.status(200).json(FilesController._serialize(file));
   }
 
   static async getIndex(req, res) {
+    const userId = await FilesController._getAuthUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const parentIdRaw = req.query.parentId !== undefined ? String(req.query.parentId) : '0';
+    const pageNum = Number(req.query.page);
+    const page = Number.isNaN(pageNum) ? 0 : Math.max(0, pageNum);
+    const limit = 20;
+
+    let parentFilter;
+    if (parentIdRaw === '0') {
+      parentFilter = 0;
+    } else if (ObjectId.isValid(parentIdRaw)) {
+      parentFilter = new ObjectId(parentIdRaw);
+    } else {
+      return res.status(200).json([]);
+    }
+
     try {
-      const userId = await FilesController._getAuthUserId(req);
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-      if (!dbClient.isAlive()) return res.status(200).json([]);
-
-      const parentIdRaw = req.query.parentId !== undefined ? req.query.parentId : '0';
-      const pageNum = Number(req.query.page);
-      const page = Number.isNaN(pageNum) ? 0 : pageNum;
-
-      const match = {
-        userId: new ObjectId(userId),
-        parentId: parentIdRaw === '0' ? 0 : new ObjectId(parentIdRaw),
-      };
-
-      const pipeline = [
-        { $match: match },
-        { $sort: { _id: 1 } },
-        { $skip: page * 20 },
-        { $limit: 20 },
-      ];
-
-      const docs = await dbClient.db.collection('files').aggregate(pipeline).toArray();
-      const out = docs.map((d) => FilesController._serialize(d));
-      return res.status(200).json(out);
+      const cursor = dbClient.db.collection('files')
+        .find({ userId: new ObjectId(userId), parentId: parentFilter })
+        .sort({ _id: 1 })
+        .skip(page * limit)
+        .limit(limit);
+      const docs = await cursor.toArray();
+      return res.status(200).json(docs.map((d) => FilesController._serialize(d)));
     } catch (e) {
       return res.status(200).json([]);
     }
