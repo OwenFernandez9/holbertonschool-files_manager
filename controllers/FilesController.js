@@ -3,10 +3,12 @@ import fs from 'fs';
 import path from 'path';
 import mongodb from 'mongodb';
 import mime from 'mime-types';
+import Queue from 'bull';
 import dbClient from '../utils/db';
 import redisClient from '../utils/redis';
 
 const { ObjectId } = mongodb;
+const fileQueue = new Queue('fileQueue');
 
 const withTimeout = (p, ms = 2000) => Promise.race(
   [p, new Promise((r) => setTimeout(() => r(null), ms))],
@@ -84,6 +86,10 @@ class FilesController {
 
     fileDoc.localPath = localPath;
     const result = await withTimeout(files.insertOne(fileDoc), 2000);
+
+    if (type === 'image') {
+      await fileQueue.add({ userId, fileId: result.insertedId.toString() });
+    }
 
     return res.status(201).json({
       id: result.insertedId.toString(), userId, name, type, isPublic: Boolean(isPublic), parentId,
@@ -163,6 +169,7 @@ class FilesController {
 
   static async getFile(req, res) {
     const { id } = req.params;
+    const { size } = req.query;
     if (!ObjectId.isValid(id)) return res.status(404).json({ error: 'Not found' });
     if (!dbClient.isAlive()) return res.status(404).json({ error: 'Not found' });
 
@@ -178,12 +185,16 @@ class FilesController {
 
     if (file.type === 'folder') return res.status(400).json({ error: "A folder doesn't have content" });
 
-    const { localPath } = file;
-    if (!localPath || !fs.existsSync(localPath)) return res.status(404).json({ error: 'Not found' });
+    let targetPath = file.localPath;
+    if (size && ['500', '250', '100'].includes(String(size))) {
+      targetPath = `${file.localPath}_${size}`;
+    }
+
+    if (!targetPath || !fs.existsSync(targetPath)) return res.status(404).json({ error: 'Not found' });
 
     const contentType = mime.lookup(file.name) || 'application/octet-stream';
     try {
-      const data = await fs.promises.readFile(localPath);
+      const data = await fs.promises.readFile(targetPath);
       res.setHeader('Content-Type', contentType);
       return res.status(200).send(data);
     } catch (e) {
