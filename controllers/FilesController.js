@@ -107,11 +107,9 @@ class FilesController {
   static async getIndex(req, res) {
     const userId = await FilesController._getAuthUserId(req);
     if (!userId) {
-      console.log('Unauthorized: no userId');
       return res.status(401).json({ error: 'Unauthorized' });
     }
     if (!dbClient.isAlive()) {
-      console.log('DB not alive');
       return res.status(200).json([]);
     }
 
@@ -124,7 +122,6 @@ class FilesController {
     if (parentIdRaw === '0') parentFilter = 0;
     else if (ObjectId.isValid(parentIdRaw)) parentFilter = new ObjectId(parentIdRaw);
     else {
-      console.log('Invalid parentIdRaw:', parentIdRaw);
       return res.status(200).json([]);
     }
 
@@ -139,9 +136,34 @@ class FilesController {
       const docs = (await withTimeout(cursor.toArray(), 2500)) || [];
       return res.status(200).json(docs.map((d) => FilesController._serialize(d)));
     } catch (err) {
-      console.error('Error in getIndex:', err);
       return res.status(500).json({ error: 'Server error' });
     }
+  }
+
+  static async _togglePublish(req, res, flag) {
+    const userId = await FilesController._getAuthUserId(req);
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { id } = req.params;
+    if (!ObjectId.isValid(id)) return res.status(404).json({ error: 'Not found' });
+    if (!dbClient.isAlive()) return res.status(404).json({ error: 'Not found' });
+
+    const files = dbClient.db.collection('files');
+    const criteria = { _id: new ObjectId(id), userId: new ObjectId(userId) };
+    const file = await withTimeout(files.findOne(criteria), 2000);
+    if (!file) return res.status(404).json({ error: 'Not found' });
+
+    await withTimeout(files.updateOne(criteria, { $set: { isPublic: !!flag } }), 2000);
+    const updated = await withTimeout(files.findOne(criteria), 2000);
+    return res.status(200).json(FilesController._serialize(updated));
+  }
+
+  static async putPublish(req, res) {
+    return FilesController._togglePublish(req, res, true);
+  }
+
+  static async putUnpublish(req, res) {
+    return FilesController._togglePublish(req, res, false);
   }
 }
 
