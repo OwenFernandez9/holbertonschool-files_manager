@@ -5,9 +5,7 @@ import mongodb from 'mongodb';
 import dbClient from '../utils/db';
 import redisClient from '../utils/redis';
 
-const {
-  ObjectId,
-} = mongodb;
+const { ObjectId } = mongodb;
 
 class FilesController {
   static async _getAuthUserId(req) {
@@ -127,40 +125,25 @@ class FilesController {
 
   static async getIndex(req, res) {
     try {
-        const userId = await FilesController._getAuthUserId(req);
-        if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const userId = await FilesController._getAuthUserId(req);
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-        const parentIdRaw = req.query.parentId !== undefined ? req.query.parentId : '0';
-        const pageNum = Number(req.query.page);
-        const page = Number.isNaN(pageNum) ? 0 : pageNum;
+      const parentIdRaw = req.query.parentId !== undefined ? req.query.parentId : '0';
+      const pageNum = Number(req.query.page);
+      const page = Number.isNaN(pageNum) ? 0 : pageNum;
 
-        const match = {
+      const match = {
         userId: new ObjectId(userId),
         parentId: parentIdRaw === '0' ? 0 : new ObjectId(parentIdRaw),
-        };
+      };
 
-        const pipeline = [
+      const pipeline = [
         { $match: match },
         { $sort: { _id: 1 } },
         { $skip: page * 20 },
         { $limit: 20 },
-        ];
+      ];
 
-        const docs = await dbClient.db.collection('files').aggregate(pipeline).toArray();
-        const out = docs.map((d) => FilesController._serialize(d));
-        return res.status(200).json(out);
-    } catch (e) {
-        return res.status(200).json([]);
-  }
-
-    const pipeline = [
-      { $match: match },
-      { $sort: { _id: 1 } },
-      { $skip: page * 20 },
-      { $limit: 20 },
-    ];
-
-    try {
       const docs = await dbClient.db.collection('files').aggregate(pipeline).toArray();
       const out = docs.map((d) => FilesController._serialize(d));
       return res.status(200).json(out);
